@@ -1,6 +1,7 @@
-import { Suspense, useMemo, useRef } from 'react'
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { Environment, PerspectiveCamera, useGLTF } from '@react-three/drei'
+import { useSpring } from '@react-spring/three'
 import * as THREE from 'three'
 import ChessPiece from './ChessPiece'
 
@@ -69,6 +70,14 @@ const BOARD_PIECE_SCALES = {
 const boardScaleFor = (v) => BOARD_BASE * (BOARD_PIECE_SCALES[v] ?? 0.8)
 
 const CAROUSEL_RADIUS = 2.4
+// Scale of the front-of-ring piece (0.32 + 0.5 · depth(1)). Reused by single-mode
+// so the lone piece keeps the exact visual size of the centered carousel piece.
+const CAROUSEL_FRONT_SCALE = 0.82
+// Single mode places the camera inside the ring (~2.4 away from the front
+// piece instead of ~6). Scale + y offset keep the piece in the upper-middle
+// of the viewport so it doesn't cover the BLANCAS/NEGRAS + ELEGIR UI row.
+const SINGLE_MODE_SCALE = 0.4
+const SINGLE_MODE_Y = 0.5
 
 // Per-variant correction applied on top of the GUI scale, so we can normalize
 // the visual size of pieces whose GLTFs render too big at the shared value.
@@ -137,11 +146,70 @@ function shortestAngleDelta(target, current) {
   return diff
 }
 
-function PieceController({ stage, piece, idx, centerIdx, selected, color, formControls }) {
+function PieceController({ stage, piece, idx, centerIdx, selected, color, formControls, selectionMode, transitionConfig }) {
   const groupRef = useRef(null)
   const innerRef = useRef(null)
   // tracks the piece's current ring angle so we can lerp along the shortest arc
   const angleRef = useRef(((idx - centerIdx) / PIECES.length) * TWO_PI)
+  // read latest mode from inside useFrame without re-subscribing
+  const modeRef = useRef(selectionMode)
+  modeRef.current = selectionMode
+  const prevStageRef = useRef(stage)
+
+  // Spring for the form/board pose. Triggered imperatively via api.start whenever
+  // the stage target changes; the useFrame loop reads its values each tick to
+  // drive the same groupRef — only while stage is form/board.
+  const [pose, poseApi] = useSpring(() => ({
+    px: 0, py: 0, pz: 0,
+    sx: 0.001,
+    rx: 0, ry: 0, rz: 0,
+    config: transitionConfig,
+  }))
+
+  // useLayoutEffect runs synchronously before paint, which beats r3f's
+  // rAF-driven useFrame. That matters here: without it, useFrame reads the
+  // spring's initial (0,0,0, scale 0.001) on the first frame of stage='form'
+  // and the piece briefly snaps to the origin invisible before the spring is
+  // seeded — that's the visible "salto" when pressing ELEGIR.
+  useLayoutEffect(() => {
+    if (stage !== 'form' && stage !== 'board') {
+      prevStageRef.current = stage
+      return
+    }
+    const isSelected = piece === selected
+    // Non-selected pieces hide instantly — only the chosen one gets the spring
+    // animation, so choosing doesn't splash 5 other pieces across the screen.
+    if (!isSelected) {
+      poseApi.set({ px: 0, py: -10, pz: 0, sx: 0.001, rx: 0, ry: 0, rz: 0 })
+      prevStageRef.current = stage
+      return
+    }
+    const g = groupRef.current
+    const enteringFromRing =
+      g &&
+      prevStageRef.current !== 'form' &&
+      prevStageRef.current !== 'board'
+    if (enteringFromRing) {
+      // seed the spring with the piece's current ring transform so the
+      // selecting→form animation starts from where the ring left it
+      poseApi.set({
+        px: g.position.x, py: g.position.y, pz: g.position.z,
+        sx: g.scale.x,
+        rx: g.rotation.x, ry: g.rotation.y, rz: g.rotation.z,
+      })
+    }
+    const t = stage === 'form'
+      ? formTarget(piece, selected, formControls)
+      : boardTarget(piece, selected, color)
+    const s = t.visible ? t.scale : 0.001
+    poseApi.start({
+      px: t.position[0], py: t.position[1], pz: t.position[2],
+      sx: s,
+      rx: t.rotation[0], ry: t.rotation[1], rz: t.rotation[2],
+      config: transitionConfig,
+    })
+    prevStageRef.current = stage
+  }, [stage, selected, color, formControls, piece, transitionConfig, poseApi])
 
   useFrame((_, delta) => {
     const g = groupRef.current
@@ -153,10 +221,48 @@ function PieceController({ stage, piece, idx, centerIdx, selected, color, formCo
     const STAGE_LAMBDA = 4
 
     if (stage === 'intro' || stage === 'selecting') {
-      // circular orbit around Y. shortest-path angular interpolation
-      // makes sure pieces travel along the ring, not across it.
       const len = PIECES.length
       const targetAngle = ((idx - centerIdx) / len) * TWO_PI
+
+      if (modeRef.current === 'single') {
+        // Camera sits at the ring center (see CameraRig) — pieces orbit AROUND
+        // the viewer on a proper circle, so turning brings the next piece in
+        // from the side while the current one swings out of view. Visibility
+        // mask keeps only the front-facing piece rendered.
+        const diff = shortestAngleDelta(targetAngle, angleRef.current)
+        angleRef.current += diff * (1 - Math.exp(-RING_LAMBDA * delta))
+        const a = angleRef.current
+        g.position.x = Math.sin(a) * CAROUSEL_RADIUS
+        g.position.y = damp(g.position.y, SINGLE_MODE_Y, RING_LAMBDA)
+        g.position.z = -Math.cos(a) * CAROUSEL_RADIUS
+        g.rotation.x = damp(g.rotation.x, 0, RING_LAMBDA)
+        g.rotation.z = damp(g.rotation.z, 0, RING_LAMBDA)
+        g.rotation.y = -a
+
+        // constant scale: adjacent pieces are ≥60° off-axis, outside the
+        // camera FOV, so they hide themselves by rotating out — no scale fade
+        // needed (scaling was making the incoming piece grow/pop visibly).
+        g.scale.setScalar(damp(g.scale.x, SINGLE_MODE_SCALE, RING_LAMBDA))
+
+        const isCenter = Math.abs(shortestAngleDelta(0, targetAngle)) < 0.01
+        if (innerRef.current) {
+          if (isCenter) {
+            // wrap into [-π, π] so when this piece stops being center the
+            // damp-to-0 takes the shortest arc (otherwise the accumulated
+            // angle unwinds visibly as a fast spin).
+            let ry = innerRef.current.rotation.y + delta * 0.8
+            if (ry > Math.PI) ry -= Math.PI * 2
+            else if (ry < -Math.PI) ry += Math.PI * 2
+            innerRef.current.rotation.y = ry
+          } else {
+            innerRef.current.rotation.y = damp(innerRef.current.rotation.y, 0, RING_LAMBDA)
+          }
+        }
+        return
+      }
+
+      // circular orbit around Y. shortest-path angular interpolation
+      // makes sure pieces travel along the ring, not across it.
       const diff = shortestAngleDelta(targetAngle, angleRef.current)
       // exponential easing on the angle delta — equivalent to damp() but on a relative value
       angleRef.current += diff * (1 - Math.exp(-RING_LAMBDA * delta))
@@ -180,23 +286,16 @@ function PieceController({ stage, piece, idx, centerIdx, selected, color, formCo
       return
     }
 
-    // form / board: damp toward absolute world target
-    const target = stage === 'form'
-      ? formTarget(piece, selected, formControls)
-      : boardTarget(piece, selected, color)
-
-    g.position.x = damp(g.position.x, target.position[0], STAGE_LAMBDA)
-    g.position.y = damp(g.position.y, target.position[1], STAGE_LAMBDA)
-    g.position.z = damp(g.position.z, target.position[2], STAGE_LAMBDA)
-
-    const targetScale = target.visible ? target.scale : 0.001
-    g.scale.setScalar(damp(g.scale.x, targetScale, STAGE_LAMBDA))
-
-    g.rotation.x = damp(g.rotation.x, target.rotation[0], STAGE_LAMBDA)
-    g.rotation.y = damp(g.rotation.y, target.rotation[1], STAGE_LAMBDA)
-    g.rotation.z = damp(g.rotation.z, target.rotation[2], STAGE_LAMBDA)
+    // form / board: position/scale/rotation come from the spring driven by the
+    // stage effect above; spin stays continuous (not a transition).
+    g.position.set(pose.px.get(), pose.py.get(), pose.pz.get())
+    g.scale.setScalar(pose.sx.get())
+    g.rotation.set(pose.rx.get(), pose.ry.get(), pose.rz.get())
 
     if (innerRef.current) {
+      const target = stage === 'form'
+        ? formTarget(piece, selected, formControls)
+        : boardTarget(piece, selected, color)
       const speed = target.spinSpeed ?? 0.6
       if (target.spinAxis === 'y') innerRef.current.rotation.y += delta * speed
       else innerRef.current.rotation.y = damp(innerRef.current.rotation.y, 0, STAGE_LAMBDA)
@@ -304,44 +403,89 @@ function BoardPiece({ slot, visible }) {
   )
 }
 
-function CameraRig({ stage, color }) {
+function resolveCameraTarget(stage, color, selectionMode) {
+  if ((stage === 'intro' || stage === 'selecting') && selectionMode === 'single') {
+    return { target: [0, 0.4, 0], look: [0, SINGLE_MODE_Y, -CAROUSEL_RADIUS] }
+  }
+  if (stage === 'form') return { target: [0.5, 0, 6], look: [-0.5, -0.5, 0] }
+  if (stage === 'board') {
+    // Frame the board from the side of the chosen color so the player's
+    // army is in the foreground. Flipping z mirrors the view 180° around Y.
+    const sideZ = color === 'black' ? -7.8 : 7.8
+    return { target: [0, 5.2, sideZ], look: [0, -0.4, 0] }
+  }
+  return { target: [0, 0.4, 6], look: [0, 0, 0] }
+}
+
+function CameraRig({ stage, color, selectionMode, transitionConfig }) {
   const camRef = useRef(null)
   const prevStageRef = useRef(stage)
-  useFrame(() => {
-    const cam = camRef.current
-    if (!cam) return
-    let target = [0, 0.4, 6]
-    let look = [0, 0, 0]
-    if (stage === 'form') {
-      target = [0.5, 0, 6]
-      look = [-0.5, -0.5, 0]
-    } else if (stage === 'board') {
-      // Frame the board from the side of the chosen color so the player's
-      // army is in the foreground. Flipping z mirrors the view 180° around Y.
-      const sideZ = color === 'black' ? -7.8 : 7.8
-      target = [0, 5.2, sideZ]
-      look = [0, -0.4, 0]
+
+  // Spring is ONLY used when transitioning into/within form or board. During
+  // boot/intro/selecting the camera keeps the original per-frame lerp so the
+  // ring / single-mode positioning behave exactly as before.
+  const [cam, camApi] = useSpring(() => ({
+    cx: 0, cy: 0.4, cz: 6,
+    config: transitionConfig,
+  }))
+
+  // Same reason as PieceController: seed the spring synchronously before paint
+  // so useFrame's first frame under form/board doesn't read the spring's
+  // initial (0, 0.4, 6) and jerk the camera there before animating.
+  useLayoutEffect(() => {
+    if (stage !== 'form' && stage !== 'board') {
+      prevStageRef.current = stage
+      return
     }
-    // On stage entry into 'board', snap directly to the target. Otherwise
-    // lerping z from +6 (form) to -7.8 (black side) crosses the origin and
-    // the camera visibly swings 180° around the lookAt point.
-    if (prevStageRef.current !== 'board' && stage === 'board') {
-      cam.position.set(target[0], target[1], target[2])
-    } else {
-      cam.position.x = THREE.MathUtils.lerp(cam.position.x, target[0], 0.05)
-      cam.position.y = THREE.MathUtils.lerp(cam.position.y, target[1], 0.05)
-      cam.position.z = THREE.MathUtils.lerp(cam.position.z, target[2], 0.05)
+    const c = camRef.current
+    const enteringFromRing =
+      c &&
+      prevStageRef.current !== 'form' &&
+      prevStageRef.current !== 'board'
+    if (enteringFromRing) {
+      // seed spring with the camera's actual current position so the form
+      // animation starts from wherever selecting left it (inside the ring
+      // in single mode, outside in carousel mode)
+      camApi.set({ cx: c.position.x, cy: c.position.y, cz: c.position.z })
     }
+    const { target } = resolveCameraTarget(stage, color, selectionMode)
+    // Board entry snaps: lerping z across the origin (+6 → -7.8 for black)
+    // would visibly swing the camera 180° around the lookAt point.
+    const snap = stage === 'board' && prevStageRef.current !== 'board'
+    camApi.start({
+      cx: target[0], cy: target[1], cz: target[2],
+      config: transitionConfig,
+      immediate: snap,
+    })
     prevStageRef.current = stage
-    cam.lookAt(look[0], look[1], look[2])
+  }, [stage, color, selectionMode, transitionConfig, camApi])
+
+  useFrame(() => {
+    const c = camRef.current
+    if (!c) return
+    const { target, look } = resolveCameraTarget(stage, color, selectionMode)
+    if (stage === 'form' || stage === 'board') {
+      c.position.set(cam.cx.get(), cam.cy.get(), cam.cz.get())
+    } else {
+      c.position.x = THREE.MathUtils.lerp(c.position.x, target[0], 0.05)
+      c.position.y = THREE.MathUtils.lerp(c.position.y, target[1], 0.05)
+      c.position.z = THREE.MathUtils.lerp(c.position.z, target[2], 0.05)
+    }
+    c.lookAt(look[0], look[1], look[2])
   })
+
   return <PerspectiveCamera ref={camRef} makeDefault position={[0, 0.4, 6]} fov={38} />
 }
 
-export default function StageScene({ stage, centerIdx, selected, color, formControls }) {
+export default function StageScene({ stage, centerIdx, selected, color, formControls, selectionMode, transitionConfig }) {
   return (
     <Canvas shadows dpr={[1, 2]} gl={{ antialias: true, alpha: true }}>
-      <CameraRig stage={stage} color={color} />
+      <CameraRig
+        stage={stage}
+        color={color}
+        selectionMode={selectionMode}
+        transitionConfig={transitionConfig}
+      />
       <ambientLight intensity={0.45} />
       <directionalLight
         position={[4, 6, 3]}
@@ -361,6 +505,8 @@ export default function StageScene({ stage, centerIdx, selected, color, formCont
             selected={selected}
             color={color}
             formControls={formControls}
+            selectionMode={selectionMode}
+            transitionConfig={transitionConfig}
           />
         ))}
         <BoardArmy stage={stage} selected={selected} color={color} />
