@@ -229,22 +229,10 @@ function ChessBoard({ visible }) {
     return arr
   }, [])
 
-  const groupRef = useRef(null)
-  useFrame(() => {
-    if (!groupRef.current) return
-    const target = visible ? 1 : 0
-    const cur = groupRef.current.scale.x
-    const ns = THREE.MathUtils.lerp(cur, target, 0.08)
-    groupRef.current.scale.setScalar(ns)
-    groupRef.current.position.y = THREE.MathUtils.lerp(
-      groupRef.current.position.y,
-      visible ? 0 : -2,
-      0.08,
-    )
-  })
+  if (!visible) return null
 
   return (
-    <group ref={groupRef} scale={0.001} position={[0, -2, 0]}>
+    <group>
       {tiles.map((t) => (
         <mesh
           key={t.key}
@@ -306,8 +294,11 @@ function BoardPiece({ slot, visible }) {
 
 function CameraRig({ stage, color }) {
   const camRef = useRef(null)
+  // Interpolated lookAt target so rotation eases with translation rather than
+  // snapping the moment `stage` changes.
+  const lookRef = useRef(new THREE.Vector3(0, 0, 0))
   const prevStageRef = useRef(stage)
-  useFrame(() => {
+  useFrame((_, delta) => {
     const cam = camRef.current
     if (!cam) return
     let target = [0, 0.4, 6]
@@ -322,18 +313,27 @@ function CameraRig({ stage, color }) {
       target = [0, 5.2, sideZ]
       look = [0, -0.4, 0]
     }
+    // Frame-rate independent critical-damp. Lower lambda = slower/cinematic.
+    const damp = (cur, tgt, lambda) =>
+      THREE.MathUtils.damp(cur, tgt, lambda, delta)
+    const POS_LAMBDA = 1.8
+    const LOOK_LAMBDA = 2.4
     // On stage entry into 'board', snap directly to the target. Otherwise
     // lerping z from +6 (form) to -7.8 (black side) crosses the origin and
     // the camera visibly swings 180° around the lookAt point.
     if (prevStageRef.current !== 'board' && stage === 'board') {
       cam.position.set(target[0], target[1], target[2])
+      lookRef.current.set(look[0], look[1], look[2])
     } else {
-      cam.position.x = THREE.MathUtils.lerp(cam.position.x, target[0], 0.05)
-      cam.position.y = THREE.MathUtils.lerp(cam.position.y, target[1], 0.05)
-      cam.position.z = THREE.MathUtils.lerp(cam.position.z, target[2], 0.05)
+      cam.position.x = damp(cam.position.x, target[0], POS_LAMBDA)
+      cam.position.y = damp(cam.position.y, target[1], POS_LAMBDA)
+      cam.position.z = damp(cam.position.z, target[2], POS_LAMBDA)
+      lookRef.current.x = damp(lookRef.current.x, look[0], LOOK_LAMBDA)
+      lookRef.current.y = damp(lookRef.current.y, look[1], LOOK_LAMBDA)
+      lookRef.current.z = damp(lookRef.current.z, look[2], LOOK_LAMBDA)
     }
     prevStageRef.current = stage
-    cam.lookAt(look[0], look[1], look[2])
+    cam.lookAt(lookRef.current)
   })
   return <PerspectiveCamera ref={camRef} makeDefault position={[0, 0.4, 6]} fov={38} />
 }

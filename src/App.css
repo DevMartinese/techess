@@ -164,6 +164,21 @@
   text-transform: uppercase;
 }
 
+/* Brand mark, shown during the form stage */
+.logo-mark {
+  position: absolute;
+  top: 28px;
+  left: 32px;
+  z-index: 4;
+  width: 32px;
+  height: 32px;
+  opacity: 0;
+  transform: translateY(-8px);
+  animation: fade-up 0.7s 0.3s ease-out forwards;
+  pointer-events: none;
+  user-select: none;
+}
+
 /* Form column slides in from the right when stage is 'form' */
 .page__form-col {
   position: absolute;
@@ -294,6 +309,65 @@
   transform: translateY(1px);
 }
 
+.form__optional {
+  margin-left: 6px;
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  color: var(--muted);
+  opacity: 0.7;
+  text-transform: uppercase;
+}
+
+.form__hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 16px;
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+  opacity: 0;
+  animation: fade-up 0.35s ease-out forwards;
+}
+
+.form__hint--warn {
+  color: #d48a7a;
+}
+
+.form__hint-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: rgba(244, 243, 239, 0.08);
+  border: 1px solid var(--glass-border);
+}
+
+.form__hint-text {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  text-transform: none;
+  letter-spacing: normal;
+  font-family: var(--sans);
+  font-size: 12px;
+}
+
+.form__hint-name {
+  color: var(--ink);
+}
+
+.form__hint-rating {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
 /* Board banner */
 .board-banner {
   position: absolute;
@@ -310,23 +384,22 @@
   animation: fade-up 0.8s 0.6s ease-out forwards;
 }
 
-.board-banner__eyebrow,
-.board-banner__title {
+.board-banner__eyebrow {
   display: block;
   width: 100%;
-}
-
-.board-banner__eyebrow {
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.32em;
   color: var(--muted);
 }
 
-.board-banner__title {
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+.board-banner__lede {
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.32em;
+  color: var(--muted);
+  text-transform: uppercase;
 }
 
 @keyframes fade-up {

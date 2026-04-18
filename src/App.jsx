@@ -3,6 +3,7 @@ import { KeyboardControls, useKeyboardControls } from '@react-three/drei'
 import StageScene from './components/StageScene'
 import RegistrationForm from './components/RegistrationForm'
 import useFormControls from './hooks/useFormControls'
+import useMoveSound from './hooks/useMoveSound'
 import './App.css'
 
 const PIECES = ['king', 'queen', 'rook', 'bishop', 'knight', 'pawn']
@@ -69,15 +70,22 @@ function AppInner() {
     return () => timers.forEach(clearTimeout)
   }, [])
 
-  const rotate = (dir) =>
+  const playMoveSound = useMoveSound()
+
+  const rotate = (dir) => {
     setCenterIdx((i) => (i + dir + PIECES.length) % PIECES.length)
+    playMoveSound()
+  }
 
   const choosePiece = () => {
     setSelected(PIECES[centerIdxRef.current])
     setStage('form')
   }
 
-  const onFormSubmit = () => setStage('board')
+  const onFormSubmit = () => {
+    playMoveSound()
+    setStage('board')
+  }
 
   const formControls = useFormControls(stage === 'form')
 
@@ -174,15 +182,20 @@ function AppInner() {
       )}
 
       {stage === 'form' && (
-        <div className="page__form-col">
-          <RegistrationForm onSubmitted={onFormSubmit} />
-        </div>
+        <>
+          <img className="logo-mark" src="/logo.svg" alt="techess" />
+          <div className="page__form-col">
+            <RegistrationForm onSubmitted={onFormSubmit} />
+          </div>
+        </>
       )}
 
       {stage === 'board' && (
         <div className="board-banner">
-          <span className="board-banner__eyebrow">¡INSCRIPCIÓN COMPLETA!</span>
-          <h2 className="board-banner__title">Nos vemos en el tablero</h2>
+          <span className="board-banner__eyebrow">INSCRIPCIÓN RECIBIDA</span>
+          <p className="board-banner__lede">
+            We are not the piece, we are the board.
+          </p>
         </div>
       )}
     </div>

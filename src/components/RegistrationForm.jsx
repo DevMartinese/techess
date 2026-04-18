@@ -1,108 +1,222 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 const INITIAL = {
   nombre: '',
-  apellido: '',
   email: '',
-  elo: '',
-  categoria: '',
-  federacion: '',
+  chessUsername: '',
+  twitterHandle: '',
+  tiempo: 'rapid',
 }
 
-const CATEGORIAS = ['Abierto', 'Sub-2000', 'Sub-1800', 'Sub-1600', 'Femenino']
+const TIEMPOS = [
+  { value: 'rapid', label: 'Rápido', statsKey: 'chess_rapid' },
+  { value: 'blitz', label: 'Blitz', statsKey: 'chess_blitz' },
+  { value: 'bullet', label: 'Bullet', statsKey: 'chess_bullet' },
+]
+
+const CHESS_COM_API = 'https://api.chess.com/pub/player'
+
+// Normalizes a chess.com handle or profile URL into the bare lowercase username
+// that the PubAPI expects.
+function normalizeHandle(raw) {
+  const trimmed = raw.trim()
+  if (!trimmed) return ''
+  const noAt = trimmed.replace(/^@/, '')
+  const fromUrl = noAt.match(/chess\.com\/member\/([^/?#]+)/i)
+  return (fromUrl ? fromUrl[1] : noAt).toLowerCase()
+}
+
+function normalizeTwitter(raw) {
+  const t = raw.trim().replace(/^@/, '')
+  const fromUrl = t.match(/(?:x|twitter)\.com\/([^/?#]+)/i)
+  return (fromUrl ? fromUrl[1] : t).replace(/^@/, '')
+}
 
 export default function RegistrationForm({ onSubmitted }) {
   const [form, setForm] = useState(INITIAL)
+  const [lookup, setLookup] = useState({ status: 'idle' })
+
   const update = (key) => (e) =>
     setForm((f) => ({ ...f, [key]: e.target.value }))
 
+  // Debounced chess.com profile + stats fetch. Aborts stale requests so the
+  // latest keystroke always wins even if earlier ones are slow.
+  useEffect(() => {
+    const handle = normalizeHandle(form.chessUsername)
+    if (!handle) {
+      setLookup({ status: 'idle' })
+      return
+    }
+    const controller = new AbortController()
+    const timer = setTimeout(async () => {
+      setLookup({ status: 'loading' })
+      try {
+        const profileRes = await fetch(`${CHESS_COM_API}/${encodeURIComponent(handle)}`, {
+          signal: controller.signal,
+        })
+        if (profileRes.status === 404) {
+          setLookup({ status: 'notfound' })
+          return
+        }
+        if (!profileRes.ok) throw new Error(`HTTP ${profileRes.status}`)
+        const profile = await profileRes.json()
+        const statsRes = await fetch(`${CHESS_COM_API}/${encodeURIComponent(handle)}/stats`, {
+          signal: controller.signal,
+        })
+        const stats = statsRes.ok ? await statsRes.json() : null
+        setLookup({ status: 'found', profile, stats })
+      } catch (err) {
+        if (err.name === 'AbortError') return
+        console.warn('chess.com lookup failed', err)
+        setLookup({ status: 'error' })
+      }
+    }, 450)
+    return () => {
+      controller.abort()
+      clearTimeout(timer)
+    }
+  }, [form.chessUsername])
+
+  const tiempoMeta = useMemo(
+    () => TIEMPOS.find((t) => t.value === form.tiempo) ?? TIEMPOS[0],
+    [form.tiempo],
+  )
+
+  const currentRating =
+    lookup.status === 'found'
+      ? lookup.stats?.[tiempoMeta.statsKey]?.last?.rating ?? null
+      : null
+
   const onSubmit = (e) => {
     e.preventDefault()
-    console.log('registration payload:', form)
-    onSubmitted?.(form)
+    const payload = {
+      nombre: form.nombre.trim(),
+      email: form.email.trim(),
+      tiempo: form.tiempo,
+      twitterHandle: normalizeTwitter(form.twitterHandle) || null,
+      chessCom:
+        lookup.status === 'found'
+          ? {
+              username: lookup.profile.username,
+              name: lookup.profile.name ?? null,
+              country: lookup.profile.country ?? null,
+              avatar: lookup.profile.avatar ?? null,
+              url: lookup.profile.url ?? null,
+              ratings: {
+                rapid: lookup.stats?.chess_rapid?.last?.rating ?? null,
+                blitz: lookup.stats?.chess_blitz?.last?.rating ?? null,
+                bullet: lookup.stats?.chess_bullet?.last?.rating ?? null,
+              },
+            }
+          : null,
+    }
+    console.log('registration payload:', payload)
+    onSubmitted?.(payload)
   }
 
   return (
     <form className="form" onSubmit={onSubmit}>
-      <span className="form__eyebrow">TORNEO 2026</span>
-      <h1 className="form__title">Registro de Torneo</h1>
+      <span className="form__eyebrow">COMUNIDAD DE AJEDREZ</span>
+      <h1 className="form__title">Nos vemos en el tablero</h1>
       <p className="form__lede">
-        Completa el formulario para inscribirte en el torneo. Las plazas son
-        limitadas.
+        Sumate a techess, y te avisamos de nuestros torneos.
       </p>
 
-      <div className="form__row form__row--two">
-        <label>
-          Nombre
-          <input
-            required
-            placeholder="Magnus"
-            value={form.nombre}
-            onChange={update('nombre')}
-          />
-        </label>
-        <label>
-          Apellido
-          <input
-            required
-            placeholder="Carlsen"
-            value={form.apellido}
-            onChange={update('apellido')}
-          />
-        </label>
-      </div>
+      <label>
+        Nombre
+        <input
+          required
+          placeholder="Tu nombre"
+          value={form.nombre}
+          onChange={update('nombre')}
+        />
+      </label>
 
       <label>
         Email
         <input
           required
           type="email"
-          placeholder="magnus@chess.com"
+          placeholder="vos@ejemplo.com"
           value={form.email}
           onChange={update('email')}
         />
       </label>
 
       <label>
-        Rating ELO
+        Usuario de chess.com <span className="form__optional">(opcional)</span>
         <input
-          required
-          type="number"
-          min="0"
-          max="3500"
-          placeholder="2800"
-          value={form.elo}
-          onChange={update('elo')}
+          placeholder="magnuscarlsen"
+          autoComplete="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          value={form.chessUsername}
+          onChange={update('chessUsername')}
+        />
+        <ChessComHint lookup={lookup} tiempoLabel={tiempoMeta.label} rating={currentRating} />
+      </label>
+
+      <label>
+        X / Twitter <span className="form__optional">(opcional)</span>
+        <input
+          placeholder="@tuusuario"
+          autoComplete="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          value={form.twitterHandle}
+          onChange={update('twitterHandle')}
         />
       </label>
 
       <label>
-        Categoría
-        <select required value={form.categoria} onChange={update('categoria')}>
-          <option value="" disabled>
-            Selecciona categoría
-          </option>
-          {CATEGORIAS.map((c) => (
-            <option key={c} value={c}>
-              {c}
+        Tiempo favorito
+        <select value={form.tiempo} onChange={update('tiempo')}>
+          {TIEMPOS.map((t) => (
+            <option key={t.value} value={t.value}>
+              {t.label}
             </option>
           ))}
         </select>
       </label>
 
-      <label>
-        Federación
-        <input
-          required
-          placeholder="FIDE"
-          value={form.federacion}
-          onChange={update('federacion')}
-        />
-      </label>
-
       <button type="submit" className="form__submit">
-        REGISTRARSE
+        ME ANOTO
       </button>
     </form>
+  )
+}
+
+function ChessComHint({ lookup, tiempoLabel, rating }) {
+  if (lookup.status === 'idle') return null
+  if (lookup.status === 'loading')
+    return <div className="form__hint">BUSCANDO…</div>
+  if (lookup.status === 'notfound')
+    return (
+      <div className="form__hint form__hint--warn">
+        NO ENCONTRAMOS ESE USUARIO
+      </div>
+    )
+  if (lookup.status === 'error')
+    return (
+      <div className="form__hint form__hint--warn">
+        NO PUDIMOS CONSULTAR CHESS.COM
+      </div>
+    )
+  const { profile } = lookup
+  const displayName = profile.name || `@${profile.username}`
+  return (
+    <div className="form__hint form__hint--found">
+      {profile.avatar && (
+        <img className="form__hint-avatar" src={profile.avatar} alt="" />
+      )}
+      <span className="form__hint-text">
+        <span className="form__hint-name">{displayName}</span>
+        {rating != null && (
+          <span className="form__hint-rating">
+            {tiempoLabel} {rating}
+          </span>
+        )}
+      </span>
+    </div>
   )
 }
