@@ -11,7 +11,7 @@ const INITIAL = {
 
 const CATEGORIAS = ['Abierto', 'Sub-2000', 'Sub-1800', 'Sub-1600', 'Femenino']
 
-export default function RegistrationForm() {
+export default function RegistrationForm({ onSubmitted }) {
   const [form, setForm] = useState(INITIAL)
   const update = (key) => (e) =>
     setForm((f) => ({ ...f, [key]: e.target.value }))
@@ -19,6 +19,7 @@ export default function RegistrationForm() {
   const onSubmit = (e) => {
     e.preventDefault()
     console.log('registration payload:', form)
+    onSubmitted?.(form)
   }
 
   return (

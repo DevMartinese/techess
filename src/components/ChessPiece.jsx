@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useGLTF, Center } from '@react-three/drei'
 
@@ -39,11 +39,30 @@ function Primitive({ variant }) {
   )
 }
 
-function GltfModel({ url, scale }) {
+function GltfModel({ url, scale, bottomAlign, dark }) {
   const { scene } = useGLTF(url)
+  // Clone so multiple ChessPiece instances of the same variant can coexist
+  // (three.js can't reparent a single object into multiple groups), and clone
+  // every material so we can tune the surface response — flatter, less shiny —
+  // and optionally recolor it to serve as the black army.
+  const cloned = useMemo(() => {
+    const c = scene.clone(true)
+    c.traverse((obj) => {
+      if (!obj.isMesh || !obj.material) return
+      const mat = obj.material.clone()
+      if (dark && mat.color) mat.color.set('#181818')
+      if ('roughness' in mat) mat.roughness = 0.85
+      if ('metalness' in mat) mat.metalness = 0
+      obj.material = mat
+    })
+    return c
+  }, [scene, dark])
+  // drei <Center> naming is counter-intuitive: `top` pushes the bbox UP from
+  // the origin (so the bottom rests at y=0). That's what we want for a chess
+  // piece sitting on its position. See node_modules/.../drei/core/Center.js:37
   return (
-    <Center>
-      <primitive object={scene} scale={scale} />
+    <Center top={bottomAlign}>
+      <primitive object={cloned} scale={scale} />
     </Center>
   )
 }
@@ -51,6 +70,8 @@ function GltfModel({ url, scale }) {
 export default function ChessPiece({
   variant = 'capsule',
   spinSpeed = 0.6,
+  bottomAlign = false,
+  dark = false,
   ...props
 }) {
   const ref = useRef(null)
@@ -62,7 +83,12 @@ export default function ChessPiece({
     <group {...props}>
       <group ref={ref}>
         {gltf ? (
-          <GltfModel url={gltf.url} scale={gltf.scale} />
+          <GltfModel
+            url={gltf.url}
+            scale={gltf.scale}
+            bottomAlign={bottomAlign}
+            dark={dark}
+          />
         ) : (
           <Primitive variant={variant} />
         )}

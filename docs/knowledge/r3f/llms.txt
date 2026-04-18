@@ -1,0 +1,44 @@
+# React Three Fiber
+
+## Documentation
+
+- [Introduction](/getting-started/introduction): React-three-fiber is a React renderer for three.js.
+- [Installation](/getting-started/installation): Learn how to install react-three-fiber
+- [Your first scene](/getting-started/your-first-scene): This guide will help you setup your first React Three Fiber scene and introduce you to its core concepts.
+- [Examples](/getting-started/examples): A few examples that demonstrate what you can do with React Three Fiber
+- [Canvas](/api/canvas): The Canvas object is your portal into three.js
+- [Community R3F Components](/getting-started/community-r3f-components): This page showcases some React Three Fiber/r3f community components that have not been merged to the drei components collection or to another pmndrs project.
+- [Objects, properties and constructor arguments](/api/objects): All the effective ways of using React Three Fiber
+- [Hooks](/api/hooks): Hooks are the heart of react-three-fiber
+- [Events](/api/events): All the events you can hook up to
+- [Additional Exports](/api/additional-exports)
+- [TypeScript](/api/typescript): Common scenarios and how to approach them with TypeScript
+- [Testing](/api/testing): How to handle unit tests
+- [Scaling performance](/advanced/scaling-performance): This is a short primer on how to scale performance.
+- [Performance pitfalls](/advanced/pitfalls): Performance 1x1
+- [v9 Migration Guide](/tutorials/v9-migration-guide): Changes and new features with v9 and React 19
+- [Events and Interaction](/tutorials/events-and-interaction): Let's make our meshes react to user input.
+- [Loading Models](/tutorials/loading-models): 3D Software to the web!
+- [Loading Textures](/tutorials/loading-textures): Let's load some fancy textures.
+- [Basic Animations](/tutorials/basic-animations): This guide will help you understand refs, useFrame and how to make basic animations with Fiber
+- [How does it work?](/tutorials/how-it-works): This is an advanced guide on the inner workings of Fiber, if you are just getting started, take a look at our introduction!
+
+## MCP Server
+
+This documentation is available via Model Context Protocol (MCP) server at https://docs.pmnd.rs/api/sse
+
+Configure in your MCP client:
+```json
+{
+  "mcpServers": {
+    "pmndrs": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/client-sse", "https://docs.pmnd.rs/api/sse"]
+    }
+  }
+}
+```
+
+---
+
+For full documentation content, see llms-full.txt
