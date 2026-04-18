@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { addDevFolder } from './internal/devGui'
+import { addDevFolder, isDevGuiEnabled } from './internal/devGui'
 
 const LS_KEY = 'techess:selection-controls'
 
@@ -9,7 +9,6 @@ const DEFAULTS = {
 
 const MODES = ['carousel', 'single']
 
-const IS_DEV = import.meta.env.DEV
 
 function load() {
   if (typeof window === 'undefined') return { ...DEFAULTS }
@@ -39,10 +38,10 @@ function save(state) {
  * lil-gui never ships in the prod bundle.
  */
 export default function useSelectionControls(active) {
-  const [values, setValues] = useState(() => (IS_DEV ? load() : { ...DEFAULTS }))
+  const [values, setValues] = useState(() => (isDevGuiEnabled() ? load() : { ...DEFAULTS }))
 
   useEffect(() => {
-    if (!IS_DEV || !active) return
+    if (!isDevGuiEnabled() || !active) return
     let folder = null
     let cancelled = false
 

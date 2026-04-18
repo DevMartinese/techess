@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { config as springConfig, easings } from '@react-spring/three'
-import { addDevFolder } from './internal/devGui'
+import { addDevFolder, isDevGuiEnabled } from './internal/devGui'
 
 const LS_KEY = 'techess:transition-controls'
 
 // Duration-based presets feel more predictable/elegant than spring physics for
 // UI transitions — no micro-oscillation at the end, just a clean decel curve.
 const DURATION_PRESETS = {
+  suave: { duration: 2200, easing: easings.easeOutCubic },
   'smooth-slow': { duration: 1600, easing: easings.easeOutCubic },
   smooth: { duration: 1200, easing: easings.easeOutCubic },
   'smooth-fast': { duration: 800, easing: easings.easeOutCubic },
@@ -14,8 +15,9 @@ const DURATION_PRESETS = {
 }
 
 const PRESETS = [
-  'smooth',
+  'suave',
   'smooth-slow',
+  'smooth',
   'smooth-fast',
   'cinematic',
   'default',
@@ -27,10 +29,9 @@ const PRESETS = [
 ]
 
 const DEFAULTS = {
-  preset: 'smooth',
+  preset: 'suave',
 }
 
-const IS_DEV = import.meta.env.DEV
 
 function load() {
   if (typeof window === 'undefined') return { ...DEFAULTS }
@@ -60,10 +61,10 @@ function save(state) {
  * lil-gui never ships in the prod bundle.
  */
 export default function useTransitionControls(active) {
-  const [values, setValues] = useState(() => (IS_DEV ? load() : { ...DEFAULTS }))
+  const [values, setValues] = useState(() => (isDevGuiEnabled() ? load() : { ...DEFAULTS }))
 
   useEffect(() => {
-    if (!IS_DEV || !active) return
+    if (!isDevGuiEnabled() || !active) return
     let folder = null
     let cancelled = false
 
@@ -111,6 +112,6 @@ export default function useTransitionControls(active) {
 
   return useMemo(() => {
     if (values.preset in DURATION_PRESETS) return DURATION_PRESETS[values.preset]
-    return springConfig[values.preset] ?? DURATION_PRESETS.smooth
+    return springConfig[values.preset] ?? DURATION_PRESETS.suave
   }, [values.preset])
 }

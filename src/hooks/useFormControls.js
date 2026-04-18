@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { addDevFolder } from './internal/devGui'
+import { addDevFolder, isDevGuiEnabled } from './internal/devGui'
 
 const LS_KEY = 'techess:form-controls'
 
@@ -16,7 +16,6 @@ const DEFAULTS = {
   spinSpeed: 0.4,
 }
 
-const IS_DEV = import.meta.env.DEV
 
 function load() {
   if (typeof window === 'undefined') return { ...DEFAULTS }
@@ -46,10 +45,10 @@ function save(state) {
  * dynamically imported so they don't ship in the prod bundle.
  */
 export default function useFormControls(active) {
-  const [values, setValues] = useState(() => (IS_DEV ? load() : { ...DEFAULTS }))
+  const [values, setValues] = useState(() => (isDevGuiEnabled() ? load() : { ...DEFAULTS }))
 
   useEffect(() => {
-    if (!IS_DEV || !active) return
+    if (!isDevGuiEnabled() || !active) return
     let folder = null
     let cancelled = false
 

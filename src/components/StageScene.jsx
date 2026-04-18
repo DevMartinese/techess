@@ -404,7 +404,10 @@ function BoardPiece({ slot, visible }) {
 }
 
 function resolveCameraTarget(stage, color, selectionMode) {
-  if ((stage === 'intro' || stage === 'selecting') && selectionMode === 'single') {
+  if (
+    (stage === 'intro' || stage === 'selecting') &&
+    selectionMode === 'single'
+  ) {
     return { target: [0, 0.4, 0], look: [0, SINGLE_MODE_Y, -CAROUSEL_RADIUS] }
   }
   if (stage === 'form') return { target: [0.5, 0, 6], look: [-0.5, -0.5, 0] }
